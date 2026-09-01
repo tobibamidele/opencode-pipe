@@ -51,11 +51,18 @@ export class FakeSessionAdapter implements OpenCodeSessionAdapter {
   /** When set, sendMessage "responds" with this text (simulates a model reply). */
   replyText?: string;
 
+  /** Simulate a busy session: throw on the next N sendMessage calls. */
+  failuresRemaining = 0;
+
   async sendMessage(
     sessionId: string,
     message: PipeMessage,
     _from: Participant,
   ): Promise<string | undefined> {
+    if (this.failuresRemaining > 0) {
+      this.failuresRemaining -= 1;
+      throw new Error("session busy");
+    }
     const list = this.inbox.get(sessionId) ?? [];
     list.push({ envelope: `[${message.senderName}] ${message.content}`, message });
     this.inbox.set(sessionId, list);

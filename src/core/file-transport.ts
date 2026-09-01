@@ -30,6 +30,11 @@ interface WatchState {
   closed: boolean;
 }
 
+/** True when `fs.watch` returned a usable watcher object (has close()). */
+function isWatcher(value: unknown): value is { close: () => void } {
+  return !!value && typeof (value as { close?: unknown }).close === "function";
+}
+
 export class FileTransport implements PipeTransport {
   private readonly root: string;
   private readonly store: FileStore;
@@ -100,7 +105,9 @@ export class FileTransport implements PipeTransport {
   }
 
   private startWatch(state: WatchState): void {
-    // Watch the pipe directory for changes to messages.jsonl.
+    // Watch the pipe directory for changes to messages.jsonl. Some runtimes
+    // (e.g. OpenCode's plugin hosts) do not return a real FSWatcher from
+    // `fs.watch`; in that case fall back to the poller instead of crashing.
     const dir = path.dirname(state.file);
     try {
       type WatchCb = (
@@ -117,8 +124,20 @@ export class FileTransport implements PipeTransport {
           }
         },
       );
-      state.watcher = watcher;
-      watcher.on("error", () => this.startPolling(state));
+      if (!isWatcher(watcher)) {
+        this.startPolling(state);
+        return;
+      }
+      const w = watcher as unknown as import("node:fs").FSWatcher;
+      state.watcher = w;
+      w.on("error", () => {
+        this.startPolling(state);
+        try {
+          w.close();
+        } catch {
+          /* already closed */
+        }
+      });
     } catch {
       this.startPolling(state);
     }
@@ -132,8 +151,15 @@ export class FileTransport implements PipeTransport {
 
   private stopWatch(state: WatchState): void {
     state.closed = true;
-    state.watcher?.close();
+    const watcher = state.watcher;
     state.watcher = undefined;
+    if (isWatcher(watcher)) {
+      try {
+        (watcher as unknown as { close: () => void }).close();
+      } catch {
+        /* already closed */
+      }
+    }
     if (state.timer) {
       clearInterval(state.timer);
       state.timer = undefined;

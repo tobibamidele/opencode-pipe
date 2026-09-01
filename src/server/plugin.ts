@@ -169,6 +169,9 @@ export const PipesServer: Plugin = async (
       }
       case "session.idle": {
         await updateParticipantStatus(event.properties.sessionID, "idle");
+        // The usual cause of a failed prompt delivery was the session being
+        // busy; now that it is idle, retry anything queued for it.
+        await manager.retryPending(event.properties.sessionID);
         break;
       }
       case "session.deleted":

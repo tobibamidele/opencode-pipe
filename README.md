@@ -195,6 +195,15 @@ Loop protection:
 - set `autoRespond: false` to still inject messages as user turns (the model
   answers in-session) but never route replies back automatically.
 
+### Busy sessions
+
+If a recipient session is busy (e.g. already generating), the prompt fails and
+the delivery is **queued instead of dropped**. When OpenCode emits
+`session.idle` for that session, the plugin retries the queued deliveries.
+A delivery is retried up to `maxDeliveryAttempts` (default 3) before being
+abandoned. The message itself is always persisted in the pipe log, so a
+recipient can still read it later via `pipe_history`.
+
 ## Agent tools
 
 The server plugin registers tools so agents can coordinate programmatically:
@@ -257,6 +266,7 @@ daemon and at-least-once delivery.
 - **Dedup** by message id avoids duplicate delivery.
 - **Path-traversal safe** — pipe directories are hex-encoded ids, never the name.
 - **Loop prevention** — `maxAgentHops` bounds a request/response chain.
+- **Busy-session retry** — failed deliveries are retried on the next `session.idle`, up to `maxDeliveryAttempts`.
 - **Message size limit** — `maxMessageChars` prevents context explosions.
 
 ## Configuration
@@ -266,6 +276,7 @@ DEFAULT_CONFIG = {
   maxMessageChars: 64 * 1024,      // max message size (chars)
   maxAgentMessageChars: 20_000,    // max chars injected into an agent session
   maxAgentHops: 8,                 // agent-to-agent chain depth limit
+  maxDeliveryAttempts: 3,          // delivery retries on busy sessions (on idle)
   requestTimeoutMs: 10 * 60_000,   // unanswered request timeout
   historyPageSize: 20,             // /pipe history default page
   notificationsEnabled: true,      // TUI toasts

@@ -37,6 +37,14 @@ export interface PipeManagerOptions {
   bus?: PipeEventBus;
 }
 
+interface PendingDelivery {
+  pipeId: string;
+  message: PipeMessage;
+  sender: Participant;
+  target: Participant;
+  attempts: number;
+}
+
 export class PipeManager {
   readonly bus: PipeEventBus;
   readonly participants: ParticipantManager;
@@ -49,6 +57,8 @@ export class PipeManager {
   private readonly subscriptions = new Map<string, () => void>();
   /** Message ids already delivered/handled by THIS process (per-process dedup). */
   private readonly deliveredIds = new Set<string>();
+  /** Deliveries that failed (e.g. target session busy); retried on idle. */
+  private readonly pending = new Map<string, PendingDelivery[]>();
 
   constructor(opts: PipeManagerOptions) {
     this.store = opts.store;
@@ -356,12 +366,17 @@ export class PipeManager {
    * and, if the adapter captured a model reply, route that reply back to the
    * original sender automatically. Auto-replies are bounded by the chain/hop
    * machinery so two agents cannot ping-pong forever.
+   *
+   * If the adapter throws (e.g. the target session is busy generating), the
+   * delivery is queued and retried by `retryPending` on the next session idle
+   * event, up to `maxDeliveryAttempts`.
    */
   private async deliverTo(
     pipeId: string,
     message: PipeMessage,
     sender: Participant,
     target: Participant,
+    attempts = 0,
   ): Promise<void> {
     try {
       const reply = await this.session.sendMessage(target.sessionId, message, sender);
@@ -370,6 +385,38 @@ export class PipeManager {
     } catch (e) {
       // Delivery failure is non-fatal; message is persisted for replay.
       this.emitLog("warn", `delivery failed to ${target.name}: ${(e as Error).message}`);
+      if (attempts < this.config.maxDeliveryAttempts) {
+        this.queuePending({ pipeId, message, sender, target, attempts: attempts + 1 });
+        this.emitLog(
+          "debug",
+          `queued ${message.id} for delivery retry to ${target.name} (attempt ${attempts + 1}/${this.config.maxDeliveryAttempts})`,
+        );
+      } else {
+        this.emitLog(
+          "error",
+          `giving up delivery of ${message.id} to ${target.name} after ${this.config.maxDeliveryAttempts} attempts`,
+        );
+      }
+    }
+  }
+
+  private queuePending(delivery: PendingDelivery): void {
+    const list = this.pending.get(delivery.target.sessionId) ?? [];
+    list.push(delivery);
+    this.pending.set(delivery.target.sessionId, list);
+  }
+
+  /**
+   * Retry deliveries that previously failed for a session. Called by the server
+   * plugin when the session transitions to idle (the usual cause of a failed
+   * prompt is that the session was busy). No-op when nothing is pending.
+   */
+  async retryPending(sessionId: string): Promise<void> {
+    const list = this.pending.get(sessionId);
+    if (!list || list.length === 0) return;
+    this.pending.delete(sessionId);
+    for (const item of list) {
+      await this.deliverTo(item.pipeId, item.message, item.sender, item.target, item.attempts);
     }
   }
 

@@ -129,4 +129,28 @@ describe("multi-process FileTransport", () => {
     const before = B.adapter.deliveredIds.filter((id) => id === msg.id).length;
     expect(before).toBeGreaterThanOrEqual(1);
   });
+
+  it("stopWatch tolerates a watcher object without close() (regression)", async () => {
+    // OpenCode's TUI plugin host has been observed to return an object from
+    // fs.watch that is truthy but lacks close(); the old code crashed on
+    // dispose with "state.watcher?.close is not a function".
+    const dataDir = await fs.mkdtemp(path.join(tmpdir(), "pipes-watch-"));
+    cleanup.push(dataDir);
+
+    const A = makeProcess(dataDir);
+    const t = A.transport as unknown as {
+      states: Map<string, { watcher?: unknown; timer?: NodeJS.Timeout; closed: boolean }>;
+      close(): Promise<void>;
+    };
+
+    await A.manager.createPipe("checkout", "ses_A", "/a");
+    const unsub = await A.transport.subscribe("checkout", async () => {});
+
+    const state = t.states.get("checkout")!;
+    // Simulate the hostile runtime: a truthy "watcher" that cannot be closed.
+    state.watcher = {} as never;
+
+    await expect(t.close()).resolves.toBeUndefined();
+    void unsub;
+  });
 });

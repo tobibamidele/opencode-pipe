@@ -12,6 +12,8 @@ export interface Config {
   maxAgentHops: number;
   /** Automatically route the receiving model's reply back through the pipe. */
   autoRespond: boolean;
+  /** Delivery attempts (incl. retries on session idle) before giving up. */
+  maxDeliveryAttempts: number;
   /** Request timeout in ms; after this a request is flagged unanswered. */
   requestTimeoutMs: number;
   /** History page size for /pipe history. */
@@ -30,6 +32,7 @@ export const DEFAULT_CONFIG: Config = {
   maxAgentMessageChars: 20_000,
   maxAgentHops: 8,
   autoRespond: true,
+  maxDeliveryAttempts: 3,
   requestTimeoutMs: 10 * 60 * 1000, // 10 minutes
   historyPageSize: 20,
   notificationsEnabled: true,
@@ -53,6 +56,9 @@ export function resolveConfig(options?: Record<string, unknown>): Config {
       ? { maxAgentHops: o.maxAgentHops as number }
       : {}),
     ...(typeof o.autoRespond === "boolean" ? { autoRespond: o.autoRespond } : {}),
+    ...(pickNumber(o, "maxDeliveryAttempts", DEFAULT_CONFIG.maxDeliveryAttempts)
+      ? { maxDeliveryAttempts: o.maxDeliveryAttempts as number }
+      : {}),
     ...(pickNumber(o, "requestTimeoutMs", DEFAULT_CONFIG.requestTimeoutMs)
       ? { requestTimeoutMs: o.requestTimeoutMs as number }
       : {}),
