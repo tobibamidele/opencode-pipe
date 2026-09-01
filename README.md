@@ -46,28 +46,57 @@ own context window.
 
 ## Installation
 
-The plugin runs under OpenCode's plugin system. Both a **server plugin** and a
-**TUI plugin** are provided.
+The package provides both a **server plugin** (session integration, routing,
+agent tools) and a **TUI plugin** (`/pipe` commands, dialogs, toasts). The
+fastest install is OpenCode's plugin CLI, which detects both targets and writes
+them to your config automatically:
+
+```sh
+# install for the current project
+opencode plugin opencode-pipes
+
+# install globally (for all projects)
+opencode plugin opencode-pipes --global
+```
+
+If you prefer to configure manually, add the plugin to your config files.
+Server plugins live in `opencode.json`, TUI plugins in `tui.json`:
 
 ```jsonc
 // opencode.json
 {
-  "plugins": {
-    "opencode-pipes": { "package": "opencode-pipes" }
-  }
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-pipes"]
 }
 ```
+
+```jsonc
+// tui.json
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": ["opencode-pipes"]
+}
+```
+
+OpenCode loads plugins from npm automatically (via Bun, cached in
+`~/.cache/opencode/node_modules/`) and reads plugin config **once at startup** —
+restart each `opencode` session after installing.
 
 Entry points are loadable under the package name:
 
 | Entry    | Path            | Purpose                              |
 | -------- | --------------- | ------------------------------------ |
-| server   | `opencode-pipes`      | Session integration, routing, tools  |
-| TUI      | `opencode-pipes/tui`  | `/pipe` commands, dialogs, toasts    |
+| server   | `opencode-pipes/server`  | Session integration, routing, tools  |
+| TUI      | `opencode-pipes/tui`     | `/pipe` commands, dialogs, toasts    |
+
+> The package exports both a `./server` and a `./tui` target, so `opencode
+> plugin opencode-pipes` installs both halves in one go.
 
 All communication lives under a shared data directory (default: the platform
 user-data directory, `opencode/pipes`). Override with the env var
 `OPENCODE_PIPES_DATA_DIR` if your processes should share a different location.
+Every participant (every OpenCode process) must point at the **same** data
+directory for them to see each other.
 
 > **Session scope is preserved.** A receiving agent treats pipe messages as
 > untrusted inter-agent communication — never as system instructions. It has no

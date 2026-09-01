@@ -1,12 +1,17 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-pipes",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Coordinate independent OpenCode sessions through named communication channels (pipes), without merging context windows.",
   "type": "module",
   "license": "MIT",
+  "main": "./dist/index.js",
   "exports": {
     ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./server": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
@@ -14,6 +19,9 @@
       "import": "./dist/tui.js",
       "types": "./dist/tui.d.ts"
     }
+  },
+  "engines": {
+    "opencode": "^1.18.0"
   },
   "files": [
     "dist"

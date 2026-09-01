@@ -592,4 +592,14 @@ export const PipesTui: TuiPlugin = async (api) => {
   });
 };
 
-export default PipesTui;
+/**
+ * TUI plugin module. OpenCode's TUI loader reads ONLY the module default
+ * export, which must be `{ id?, tui }` — the `tui` function itself is exposed
+ * as a named export for advanced/embedded use.
+ */
+const plugin = {
+  id: "opencode-pipes",
+  tui: PipesTui,
+};
+
+export default plugin;
