@@ -158,6 +158,10 @@ export const PipesServer: Plugin = async (
       case "session.updated": {
         const info = event.properties.info;
         identity.observe({ sessionId: info.id, directory: info.directory });
+        // Subscribe the server manager to pipes this session belongs to. Join
+        // may also have happened through the TUI manager (dialog), which never
+        // prompts; re-syncing here keeps deliveries authoritative.
+        await syncListening();
         break;
       }
       case "session.status": {
@@ -165,6 +169,7 @@ export const PipesServer: Plugin = async (
         const targetStatus =
           status.type === "busy" || status.type === "retry" ? "busy" : "idle";
         await updateParticipantStatus(sessionID, targetStatus);
+        if (targetStatus === "idle") await syncListening();
         break;
       }
       case "session.idle": {
@@ -172,6 +177,7 @@ export const PipesServer: Plugin = async (
         // The usual cause of a failed prompt delivery was the session being
         // busy; now that it is idle, retry anything queued for it.
         await manager.retryPending(event.properties.sessionID);
+        await syncListening();
         break;
       }
       case "session.deleted":
@@ -198,6 +204,20 @@ export const PipesServer: Plugin = async (
       }
     }
   }
+
+  // Keep the server manager subscribed to pipes the current session belongs to,
+  // even when the join happened through the TUI manager's dialog (which cannot
+  // prompt the model itself). Called on session lifecycle events and, as a
+  // safety net, on a short unref'd timer so dialog-created joins are picked up
+  // within a few seconds. unref() ensures the timer never keeps the process up.
+  let listeningTimer: ReturnType<typeof setInterval> | undefined;
+  const syncListening = async () => {
+    const sid = await identity.currentSessionId();
+    if (!sid) return;
+    await manager.syncListening(sid);
+  };
+  listeningTimer = setInterval(() => void syncListening(), 5000);
+  listeningTimer.unref?.();
 
   // Inject the protocol into a session when it joins a pipe. The tools call
   // this; we also expose it so the coordinator can inject on reconnect.

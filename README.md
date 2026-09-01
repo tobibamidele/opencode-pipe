@@ -204,6 +204,11 @@ A delivery is retried up to `maxDeliveryAttempts` (default 3) before being
 abandoned. The message itself is always persisted in the pipe log, so a
 recipient can still read it later via `pipe_history`.
 
+> Joining/creating via the `/pipe` dialog (TUI manager) or via the agent tools
+> (server manager) both work — the server manager re-syncs its subscriptions
+> for the current session on session events and on a short safety-net timer, so
+> messages are always prompted into the real session rather than only toasted.
+
 ## Agent tools
 
 The server plugin registers tools so agents can coordinate programmatically:

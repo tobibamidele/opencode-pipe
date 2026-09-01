@@ -130,6 +130,55 @@ describe("multi-process FileTransport", () => {
     expect(before).toBeGreaterThanOrEqual(1);
   });
 
+  it("server manager syncs subscriptions after a TUI-style (dialog) join", async () => {
+    // The user joins with the /pipe dialog, which runs through the TUI manager
+    // (no-op adapter, never prompts). The SERVER manager must pick up the same
+    // participant and subscribe, otherwise the remote message only toasts.
+    const dataDir = await fs.mkdtemp(path.join(tmpdir(), "pipes-sync-"));
+    cleanup.push(dataDir);
+
+    const A = makeProcess(dataDir); // process A: server manager (frontend)
+    const B = makeProcess(dataDir); // process B: server manager (backend) — NOT told to join
+    const T = makeProcess(dataDir); // process B's TUI manager — this is what joins
+
+    const { pipe } = await A.manager.createPipe("checkout", "ses_A", "/proj/frontend");
+
+    // TUI manager joins on behalf of the backend session.
+    await T.manager.joinPipe({
+      pipeId: pipe.id,
+      sessionId: "ses_B",
+      directory: "/proj/backend",
+      name: "backend",
+    });
+
+    // B's server manager has no idea yet -> message sent now is NOT prompted.
+    const before = await A.manager.send({
+      sessionId: "ses_A",
+      pipeId: pipe.id,
+      to: "backend",
+      content: "hello before sync",
+    });
+    await sleep(600);
+    expect(B.adapter.messagesFor("ses_B").some((e) => e.message.id === before.id)).toBe(false);
+
+    // The server plugin syncs (session lifecycle event or the 5s timer).
+    await B.manager.syncListening("ses_B");
+
+    // Subscribing replays the log -> the earlier message is now delivered too.
+    await sleep(600);
+    expect(B.adapter.messagesFor("ses_B").some((e) => e.message.id === before.id)).toBe(true);
+
+    // New messages are delivered promptly after the sync.
+    const after = await A.manager.send({
+      sessionId: "ses_A",
+      pipeId: pipe.id,
+      to: "backend",
+      content: "hello after sync",
+    });
+    await sleep(600);
+    expect(B.adapter.messagesFor("ses_B").some((e) => e.message.id === after.id)).toBe(true);
+  });
+
   it("stopWatch tolerates a watcher object without close() (regression)", async () => {
     // OpenCode's TUI plugin host has been observed to return an object from
     // fs.watch that is truthy but lacks close(); the old code crashed on

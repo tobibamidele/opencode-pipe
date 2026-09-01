@@ -485,7 +485,7 @@ export class PipeManager {
    * Ensure this process is listening for remote messages on a pipe and, when
    * received, delivering them to the given local session.
    */
-  private async ensureListening(pipeId: string, sessionId: string): Promise<void> {
+  async ensureListening(pipeId: string, sessionId: string): Promise<void> {
     const key = `${pipeId}:${sessionId}`;
     if (this.subscriptions.has(key)) return;
 
@@ -516,6 +516,21 @@ export class PipeManager {
     });
 
     this.subscriptions.set(key, unsub);
+  }
+
+  /**
+   * Subscribe to every active pipe the given session is a participant of. This
+   * keeps the server manager in sync even when the join/create happened through
+   * another manager in the same process (e.g. the TUI dialog), so deliveries
+   * are always prompted into the real session. Idempotent and cheap.
+   */
+  async syncListening(sessionId: string): Promise<void> {
+    const pipes = await this.store.listPipes();
+    for (const pipe of pipes) {
+      if (pipe.status === "closed") continue;
+      const participant = await this.participants.bySession(pipe.id, sessionId);
+      if (participant) await this.ensureListening(pipe.id, sessionId);
+    }
   }
 
   /** Respond to a remote request with a reply. */

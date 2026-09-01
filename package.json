@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-pipes",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Coordinate independent OpenCode sessions through named communication channels (pipes), without merging context windows.",
   "type": "module",
   "license": "MIT",
