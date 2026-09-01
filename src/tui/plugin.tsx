@@ -107,6 +107,7 @@ export const PipesTui: TuiPlugin = async (api) => {
       description: "Open the OpenCode Pipes interface",
       category: "pipes",
       slash: { name: "pipe", aliases: ["p"] },
+      keybind: "<leader>p",
       onSelect: () => openMainDialog(),
     },
     {
@@ -176,13 +177,27 @@ export const PipesTui: TuiPlugin = async (api) => {
       const pipe = await requireActivePipe();
       if (!pipe) {
         api.ui.dialog.replace(() => (
-          <api.ui.Dialog size="medium" onClose={close}>
-            <api.ui.DialogAlert
-              title="OpenCode Pipes"
-              message="You are not in any pipe. Create or join one to collaborate."
-              onConfirm={close}
-            />
-          </api.ui.Dialog>
+          <api.ui.DialogSelect
+            title="OpenCode Pipes"
+            placeholder="Select an action"
+            options={[
+              { title: "Create a pipe", value: "create" },
+              { title: "Join a pipe", value: "join" },
+              { title: "Close", value: "close" },
+            ]}
+            onSelect={(o) => {
+              switch (o.value) {
+                case "create":
+                  createPipeDialog();
+                  break;
+                case "join":
+                  joinPipeDialog();
+                  break;
+                default:
+                  close();
+              }
+            }}
+          />
         ));
         return;
       }

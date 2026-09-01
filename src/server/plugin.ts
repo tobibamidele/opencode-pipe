@@ -198,6 +198,10 @@ export const PipesServer: Plugin = async (
   // this; we also expose it so the coordinator can inject on reconnect.
 
   const toolMap: NonNullable<Hooks["tool"]> = {
+    pipe_create: tools.pipe_create,
+    pipe_join: tools.pipe_join,
+    pipe_list: tools.pipe_list,
+    pipe_leave: tools.pipe_leave,
     pipe_send: tools.pipe_send,
     pipe_request: tools.pipe_request,
     pipe_reply: tools.pipe_reply,

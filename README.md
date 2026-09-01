@@ -147,6 +147,16 @@ No files moved, no context merged, no copy-paste.
 
 ## Human commands (TUI)
 
+OpenCode only dispatches typed `/x` input to commands in its *server* command
+list, and TUI plugin commands are palette/keybinding-only. So the pipe dialog is
+opened with **`ctrl+p` → "OpenCode Pipes"** or the **`leader+p`** keybinding
+(`leader` defaults to `ctrl+x`, so `ctrl+x p`). From the dialog you can create,
+join, leave, send, and inspect pipes. The no-pipe dialog offers **Create pipe /
+Join pipe / Close**.
+
+Typing `/pipe ...` in the input is delivered to the model, which performs the
+action through the `pipe_*` tools instead of just describing it:
+
 | Command                    | What it does                                  |
 | -------------------------- | --------------------------------------------- |
 | `/pipe`                    | Open the pipe overview dialog                 |
@@ -168,6 +178,10 @@ The server plugin registers tools so agents can coordinate programmatically:
 
 | Tool                   | Purpose                                                        |
 | ---------------------- | -------------------------------------------------------------- |
+| `pipe_create`          | Create a pipe and join it as a participant                     |
+| `pipe_join`            | Join an existing pipe                                          |
+| `pipe_list`            | List existing pipes (use before joining)                       |
+| `pipe_leave`           | Leave the current pipe (history is preserved)                  |
 | `pipe_send`            | Send a message to a participant / broadcast                    |
 | `pipe_request`         | Ask a participant for info or work in their own workspace      |
 | `pipe_reply`           | Reply to a received request (correlates via `replyTo`)         |

@@ -20,6 +20,102 @@ export interface ToolsDeps {
 
 export function buildTools(deps: ToolsDeps) {
   return {
+    pipe_create: tool({
+      description: `Create a new pipe and join it as a participant from this session.
+
+Use this when the user asks to set up a collaboration channel, e.g. they type
+"/pipe create <name>". Creates the pipe and registers this session as a
+participant inside it. Fails if the name is invalid or a pipe with that name
+already exists.`,
+      args: {
+        name: tool.schema
+          .string()
+          .describe("Pipe name; letters, digits, '-' and '_' only."),
+        role: tool.schema
+          .string()
+          .optional()
+          .describe("Optional participant role label (e.g. 'frontend')."),
+      },
+      async execute(args, ctx) {
+        try {
+          const { pipe, participant } = await deps.manager.createPipe(
+            args.name,
+            ctx.sessionID,
+            ctx.directory,
+          );
+          return `Pipe "${pipe.name}" created. You joined as "${participant.name}".`;
+        } catch (e) {
+          return `Failed to create pipe: ${(e as Error).message}`;
+        }
+      },
+    }),
+
+    pipe_join: tool({
+      description: `Join an existing pipe from this session (e.g. the user typed "/pipe join <name>"). Registers this session as a participant of that pipe so it can send and receive pipe messages.`,
+      args: {
+        pipeName: tool.schema.string().describe("Name of an existing pipe to join."),
+        name: tool.schema
+          .string()
+          .optional()
+          .describe("Optional participant name/label for this session."),
+      },
+      async execute(args, ctx) {
+        try {
+          const p = await deps.manager.joinPipe({
+            pipeName: args.pipeName,
+            sessionId: ctx.sessionID,
+            directory: ctx.directory,
+            name: args.name,
+          });
+          return `Joined pipe "${args.pipeName}" as "${p.name}".`;
+        } catch (e) {
+          return `Failed to join pipe: ${(e as Error).message}`;
+        }
+      },
+    }),
+
+    pipe_list: tool({
+      description: `List existing pipes (name, status, participant and message counts). Use this when the user wants to join a pipe or you need to see what channels exist.`,
+      args: {
+        includeClosed: tool.schema
+          .boolean()
+          .optional()
+          .describe("Include closed pipes (default false)."),
+      },
+      async execute(args) {
+        const pipes = await deps.manager.listPipes();
+        const open = pipes.filter((p) =>
+          args.includeClosed ? true : p.status !== "closed",
+        );
+        if (open.length === 0) {
+          return "No pipes exist yet. Create one with pipe_create.";
+        }
+        return open
+          .map(
+            (p) =>
+              `- ${p.name} (${p.status}) ${p.participants.length} participant(s), ${p.messageCount} message(s)`,
+          )
+          .join("\n");
+      },
+    }),
+
+    pipe_leave: tool({
+      description: `Leave the pipe the current session participates in. Historical messages and membership records are preserved; the session simply stops receiving pipe messages.`,
+      args: {},
+      async execute(_args, ctx) {
+        const participant = await deps.resolveSession(ctx.sessionID, ctx.directory);
+        if (!participant) {
+          return "You are not currently participating in an OpenCode Pipe.";
+        }
+        try {
+          await deps.manager.leavePipe(participant.pipeId, ctx.sessionID);
+          return `Left pipe "${participant.pipeId}".`;
+        } catch (e) {
+          return `Failed to leave pipe: ${(e as Error).message}`;
+        }
+      },
+    }),
+
     pipe_send: tool({
       description: `Send a message to a participant in the current OpenCode Pipes channel.
 
