@@ -1,0 +1,5 @@
+node_modules
+dist
+*.tsbuildinfo
+.opencode/node_modules
+.opencode/package-lock.json
