@@ -48,15 +48,19 @@ export class FakeSessionAdapter implements OpenCodeSessionAdapter {
   private statuses = new Map<string, ParticipantStatus>();
   currentId?: string;
 
+  /** When set, sendMessage "responds" with this text (simulates a model reply). */
+  replyText?: string;
+
   async sendMessage(
     sessionId: string,
     message: PipeMessage,
     _from: Participant,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const list = this.inbox.get(sessionId) ?? [];
     list.push({ envelope: `[${message.senderName}] ${message.content}`, message });
     this.inbox.set(sessionId, list);
     this.deliveredIds.push(message.id);
+    return this.replyText;
   }
 
   async sendNotification(sessionId: string, text: string): Promise<void> {

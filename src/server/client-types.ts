@@ -11,7 +11,10 @@ export interface PipesClient {
       body: {
         parts: Array<{ type: "text"; text: string }>;
       };
-    }): Promise<unknown>;
+    }): Promise<{
+      info?: { text?: string };
+      parts?: Array<{ type?: string; text?: string }>;
+    }>;
     status(
       opts: { path: { id: string } },
     ): Promise<{ data?: { type?: string } }>;

@@ -344,17 +344,75 @@ export class PipeManager {
     for (const target of recipients) {
       if (target.sessionId === sender.sessionId) continue;
       if (!this.subscriptions.has(`${pipe.id}:${target.sessionId}`)) continue;
-      try {
-        await this.session.sendMessage(target.sessionId, message, sender);
-        this.bus.emit({ type: "message.delivered", message });
-      } catch (e) {
-        // Delivery failure is non-fatal; message is persisted for replay.
-        this.emitLog("warn", `delivery failed to ${target.name}: ${(e as Error).message}`);
-      }
+      await this.deliverTo(pipe.id, message, sender, target);
     }
 
     // Publish to the shared log so remote processes deliver to their sessions.
     await this.transport.publish(pipe.id, message);
+  }
+
+  /**
+   * Deliver a message to a single local session (a session this manager manages)
+   * and, if the adapter captured a model reply, route that reply back to the
+   * original sender automatically. Auto-replies are bounded by the chain/hop
+   * machinery so two agents cannot ping-pong forever.
+   */
+  private async deliverTo(
+    pipeId: string,
+    message: PipeMessage,
+    sender: Participant,
+    target: Participant,
+  ): Promise<void> {
+    try {
+      const reply = await this.session.sendMessage(target.sessionId, message, sender);
+      this.bus.emit({ type: "message.delivered", message });
+      await this.maybeAutoReply({ pipeId, incoming: message, responder: target, reply });
+    } catch (e) {
+      // Delivery failure is non-fatal; message is persisted for replay.
+      this.emitLog("warn", `delivery failed to ${target.name}: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * Route the receiving model's reply back through the pipe as a `response`.
+   * Only direct (non-broadcast) messages trigger a reply, and chains are capped
+   * at `maxAgentHops` to prevent runaway agent-to-agent chatter.
+   */
+  private async maybeAutoReply(input: {
+    pipeId: string;
+    incoming: PipeMessage;
+    responder: Participant;
+    reply?: string;
+  }): Promise<void> {
+    if (!this.config.autoRespond) return;
+    const { pipeId, incoming, responder, reply } = input;
+    const text = reply?.trim();
+    if (!text) return;
+    // Never auto-respond to broadcasts (avoids N-way echoes) or to ourselves.
+    if (incoming.recipient.type !== "participant") return;
+    if (incoming.senderId === responder.id) return;
+    if (incoming.type === "system") return;
+    // Hop guard: a reply already at the budget must not extend the chain.
+    const nextHop = (incoming.chain?.hopCount ?? 0) + 1;
+    if (nextHop > this.config.maxAgentHops) return;
+
+    try {
+      await this.send({
+        sessionId: responder.sessionId,
+        pipeId,
+        to: incoming.senderId,
+        content: text.slice(0, this.config.maxMessageChars),
+        type: "response",
+        replyTo: incoming.id,
+        reference: incoming,
+      });
+      this.emitLog(
+        "info",
+        `auto-replied ${incoming.id} -> ${incoming.senderId} (hop ${(incoming.chain?.hopCount ?? 0) + 1})`,
+      );
+    } catch (e) {
+      this.emitLog("warn", `auto-reply failed for ${incoming.id}: ${(e as Error).message}`);
+    }
   }
 
   private async resolvePipe(pipeId?: string, pipeName?: string): Promise<Pipe> {
@@ -406,21 +464,8 @@ export class PipeManager {
       if (!isRecipient || remote.senderId === me.id) return;
 
       const sender = await this.store.getParticipant(remote.senderId);
-      try {
-        await this.session.sendMessage(me.sessionId, remote, sender ?? {
-          id: remote.senderId,
-          pipeId,
-          sessionId: remote.senderId,
-          name: remote.senderName ?? "unknown",
-          directory: "",
-          joinedAt: 0,
-          lastSeenAt: 0,
-          status: "unknown",
-        });
-        this.bus.emit({ type: "message.delivered", message: remote });
-      } catch (e) {
-        this.emitLog("warn", `delivery failed: ${(e as Error).message}`);
-      }
+      if (!sender) return;
+      await this.deliverTo(pipeId, remote, sender, me);
     });
 
     this.subscriptions.set(key, unsub);

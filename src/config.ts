@@ -10,6 +10,8 @@ export interface Config {
   maxAgentMessageChars: number;
   /** Max number of agent-to-agent hops before a chain is stopped. */
   maxAgentHops: number;
+  /** Automatically route the receiving model's reply back through the pipe. */
+  autoRespond: boolean;
   /** Request timeout in ms; after this a request is flagged unanswered. */
   requestTimeoutMs: number;
   /** History page size for /pipe history. */
@@ -27,6 +29,7 @@ export const DEFAULT_CONFIG: Config = {
   maxMessageChars: 64 * 1024,
   maxAgentMessageChars: 20_000,
   maxAgentHops: 8,
+  autoRespond: true,
   requestTimeoutMs: 10 * 60 * 1000, // 10 minutes
   historyPageSize: 20,
   notificationsEnabled: true,
@@ -49,6 +52,7 @@ export function resolveConfig(options?: Record<string, unknown>): Config {
     ...(pickNumber(o, "maxAgentHops", DEFAULT_CONFIG.maxAgentHops)
       ? { maxAgentHops: o.maxAgentHops as number }
       : {}),
+    ...(typeof o.autoRespond === "boolean" ? { autoRespond: o.autoRespond } : {}),
     ...(pickNumber(o, "requestTimeoutMs", DEFAULT_CONFIG.requestTimeoutMs)
       ? { requestTimeoutMs: o.requestTimeoutMs as number }
       : {}),

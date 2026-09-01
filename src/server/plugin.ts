@@ -17,6 +17,7 @@ import { resolveConfig, type Config } from "../config.js";
 import { defaultDataDir } from "../utils/data-dir.js";
 import type { Pipe } from "../models/pipe.js";
 import { formatEnvelope } from "../protocol/envelope.js";
+import { extractReplyText } from "./session-adapter.js";
 import type { PipesClient } from "./client-types.js";
 
 export type ServerPluginState = {
@@ -62,12 +63,13 @@ export function createPipesServer(input: {
     session: {
       async sendMessage(sessionId, message, from) {
         const pipe = await pipeProvider(message.pipeId);
-        if (!pipe) return;
+        if (!pipe) return undefined;
         const envelope = formatEnvelope({ pipe, message, from });
-        await client.session.prompt({
+        const res = await client.session.prompt({
           path: { id: sessionId },
           body: { parts: [{ type: "text", text: envelope }] },
         });
+        return extractReplyText(res);
       },
       async sendNotification(sessionId, text) {
         try {

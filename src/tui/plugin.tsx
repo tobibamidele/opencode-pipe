@@ -29,7 +29,9 @@ export function createTuiManager(input: {
     store,
     transport,
     session: {
-      async sendMessage() {},
+      async sendMessage(): Promise<string | undefined> {
+        return undefined;
+      },
       async sendNotification() {},
       async getStatus() {
         return undefined;

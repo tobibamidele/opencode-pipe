@@ -17,6 +17,31 @@ export interface SessionAdapterDeps {
   pipeProvider: (pipeId: string) => Promise<Pipe | undefined>;
 }
 
+/**
+ * Extract the assistant reply text from a `session.prompt` result. The response
+ * shape is `{ info: AssistantMessage, parts: Part[] }`; we defensively handle
+ * both the whole-message `info.text` and a text-parts list.
+ */
+export function extractReplyText(result: unknown): string | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const anyResult = result as {
+    info?: { text?: string };
+    parts?: Array<{ type?: string; text?: string }>;
+  };
+  const infoText = anyResult.info?.text?.trim();
+  if (infoText) return infoText;
+  const parts = anyResult.parts;
+  if (Array.isArray(parts)) {
+    const text = parts
+      .filter((p) => p?.type === "text" && typeof p.text === "string")
+      .map((p) => p.text)
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
 export class OpenCodeSessionAdapterImpl implements OpenCodeSessionAdapter {
   constructor(private readonly deps: SessionAdapterDeps) {}
 
@@ -28,23 +53,26 @@ export class OpenCodeSessionAdapterImpl implements OpenCodeSessionAdapter {
     sessionId: string,
     message: PipeMessage,
     from: Participant,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const pipe = await this.deps.pipeProvider(message.pipeId);
-    if (!pipe) return;
+    if (!pipe) return undefined;
 
     const envelope = formatEnvelope({ pipe, message, from });
 
     try {
-      await this.deps.client.session.prompt({
+      const res = await this.deps.client.session.prompt({
         path: { id: sessionId },
         body: {
           parts: [{ type: "text", text: envelope }],
         },
       });
+      const reply = extractReplyText(res);
       this.log(
         "info",
-        `delivered ${message.type} ${message.id} to session ${sessionId} (${from.name} -> ${pipe.name})`,
+        `delivered ${message.type} ${message.id} to session ${sessionId} (${from.name} -> ${pipe.name})` +
+          (reply ? `; captured ${reply.length} char reply` : ""),
       );
+      return reply;
     } catch (e) {
       this.log("warn", `prompt delivery failed to ${sessionId}: ${(e as Error).message}`);
       throw e;

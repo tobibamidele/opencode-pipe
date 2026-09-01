@@ -172,6 +172,29 @@ Notifications (toasts) surface direct requests, task state changes, and
 participants joining/leaving. Routine broadcasts and status transitions are
 intentionally **not** notified, to avoid spam.
 
+## How agents talk to each other
+
+Pipe messages are delivered into the receiving session as **real user turns**
+via OpenCode's SDK (`session.prompt` — no custom RPC needed). The receiving
+model sees the message in its own chat and responds normally. With
+`autoRespond` enabled (default), the plugin then **captures that reply and
+routes it back through the pipe** to the original sender (`response`, correlated
+via `replyTo`), so the two agents converse in their own sessions:
+
+```text
+frontend agent ── pipe_request ──▶ pipe ──▶ backend session
+                                                   │ model replies
+frontend session ◀── pipe ── response (auto) ◀────┘
+```
+
+Loop protection:
+
+- only **direct** messages auto-reply; broadcasts never echo back;
+- chains are capped at `maxAgentHops` (default 8) — the hop count is carried on
+  every message and incremented per reply, so agents cannot ping-pong forever;
+- set `autoRespond: false` to still inject messages as user turns (the model
+  answers in-session) but never route replies back automatically.
+
 ## Agent tools
 
 The server plugin registers tools so agents can coordinate programmatically:
