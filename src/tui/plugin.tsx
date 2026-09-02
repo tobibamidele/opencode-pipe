@@ -454,7 +454,12 @@ export const PipesTui: TuiPlugin = async (api) => {
                       to: r.value as string,
                       content,
                     });
-                    toast(`Sent to ${r.value} (${msg.id})`, "success");
+                    // manager here is the TUI's own PipeManager, whose session
+                    // adapter is a no-op — it never injects locally. Any real
+                    // recipient is delivered by the *server* plugin's manager
+                    // picking the message up off the shared transport, so this
+                    // can only confirm persistence, not actual injection.
+                    toast(`Sent to ${r.value} (${msg.id}) — persisted; delivery happens on the recipient's own process.`, "success");
                   } catch (e) {
                     toast(`Failed: ${(e as Error).message}`, "error");
                   }

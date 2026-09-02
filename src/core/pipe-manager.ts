@@ -45,6 +45,15 @@ interface PendingDelivery {
   attempts: number;
 }
 
+export interface DeliveryOutcome {
+  participantId: string;
+  name: string;
+  /** "delivered": injected into the session. "queued": will retry on idle.
+   *  "remote": recipient is managed by another process; outcome unknown here. */
+  status: "delivered" | "queued" | "failed" | "remote";
+  error?: string;
+}
+
 export class PipeManager {
   readonly bus: PipeEventBus;
   readonly participants: ParticipantManager;
@@ -59,6 +68,10 @@ export class PipeManager {
   private readonly deliveredIds = new Set<string>();
   /** Deliveries that failed (e.g. target session busy); retried on idle. */
   private readonly pending = new Map<string, PendingDelivery[]>();
+  /** Outcome of the most recent `send()`'s immediate delivery attempt, keyed by
+   *  message id, so callers (tools) can report real status instead of assuming
+   *  success once the message is persisted. Small bounded cache. */
+  private readonly lastOutcomes = new Map<string, DeliveryOutcome[]>();
 
   constructor(opts: PipeManagerOptions) {
     this.store = opts.store;
@@ -347,18 +360,31 @@ export class PipeManager {
         ? others.filter((p) => p.id === recipient.participantId)
         : others;
 
+    const outcomes: DeliveryOutcome[] = [];
+
     // Deliver directly only to recipient sessions THIS process actively manages
     // (i.e. sessions that joined through this manager instance). Recipients
     // living in other OpenCode processes receive the message via the shared
     // transport when their process's watcher picks up the persisted record.
     for (const target of recipients) {
       if (target.sessionId === sender.sessionId) continue;
-      if (!this.subscriptions.has(`${pipe.id}:${target.sessionId}`)) continue;
-      await this.deliverTo(pipe.id, message, sender, target);
+      if (!this.subscriptions.has(`${pipe.id}:${target.sessionId}`)) {
+        outcomes.push({ participantId: target.id, name: target.name, status: "remote" });
+        continue;
+      }
+      outcomes.push(await this.deliverTo(pipe.id, message, sender, target));
     }
+
+    this.lastOutcomes.set(message.id, outcomes);
 
     // Publish to the shared log so remote processes deliver to their sessions.
     await this.transport.publish(pipe.id, message);
+  }
+
+  /** Delivery outcome captured for a message's initial `send()` call (same-process
+   *  recipients only — remote recipients report status "remote", not a guess). */
+  deliveryOutcomes(messageId: string): DeliveryOutcome[] | undefined {
+    return this.lastOutcomes.get(messageId);
   }
 
   /**
@@ -377,26 +403,31 @@ export class PipeManager {
     sender: Participant,
     target: Participant,
     attempts = 0,
-  ): Promise<void> {
+  ): Promise<DeliveryOutcome> {
     try {
       const reply = await this.session.sendMessage(target.sessionId, message, sender);
       this.bus.emit({ type: "message.delivered", message });
       await this.maybeAutoReply({ pipeId, incoming: message, responder: target, reply });
+      return { participantId: target.id, name: target.name, status: "delivered" };
     } catch (e) {
-      // Delivery failure is non-fatal; message is persisted for replay.
-      this.emitLog("warn", `delivery failed to ${target.name}: ${(e as Error).message}`);
+      const errMsg = (e as Error).message;
+      // Delivery failure is non-fatal; message is persisted for replay. It is
+      // ALWAYS logged (not gated by config.debug) so a failure is discoverable
+      // even when the caller only sees "message sent" (persistence succeeded).
+      this.emitLog("warn", `delivery failed to ${target.name}: ${errMsg}`);
       if (attempts < this.config.maxDeliveryAttempts) {
         this.queuePending({ pipeId, message, sender, target, attempts: attempts + 1 });
         this.emitLog(
           "debug",
           `queued ${message.id} for delivery retry to ${target.name} (attempt ${attempts + 1}/${this.config.maxDeliveryAttempts})`,
         );
-      } else {
-        this.emitLog(
-          "error",
-          `giving up delivery of ${message.id} to ${target.name} after ${this.config.maxDeliveryAttempts} attempts`,
-        );
+        return { participantId: target.id, name: target.name, status: "queued", error: errMsg };
       }
+      this.emitLog(
+        "error",
+        `giving up delivery of ${message.id} to ${target.name} after ${this.config.maxDeliveryAttempts} attempts`,
+      );
+      return { participantId: target.id, name: target.name, status: "failed", error: errMsg };
     }
   }
 

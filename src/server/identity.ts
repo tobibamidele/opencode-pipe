@@ -8,6 +8,10 @@
 export interface SessionIdentity {
   observe(input: { sessionId: string; directory: string }): void;
   currentSessionId(): Promise<string | undefined>;
+  /** Every session this process has observed (created/updated), so
+   *  reconciliation can subscribe pipe memberships for all of them —
+   *  not just whichever one was most recently active. */
+  observedSessionIds(): string[];
   currentDirectory(): string;
   setLog(log: (level: "debug" | "info" | "warn" | "error", m: string) => void): void;
 }
@@ -26,14 +30,18 @@ export class DefaultSessionIdentity implements SessionIdentity {
     this.log = log;
   }
 
-  observe({ sessionId }: { sessionId: string; directory: string }): void {
+  observe({ sessionId, directory }: { sessionId: string; directory: string }): void {
     this.currentId = sessionId;
-    this.observed.set(sessionId, this.initialDirectory);
+    this.observed.set(sessionId, directory || this.initialDirectory);
     this.log("debug", `observed session ${sessionId}`);
   }
 
   async currentSessionId(): Promise<string | undefined> {
     return this.currentId;
+  }
+
+  observedSessionIds(): string[] {
+    return [...this.observed.keys()];
   }
 
   currentDirectory(): string {

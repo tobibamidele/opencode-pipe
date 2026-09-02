@@ -48,7 +48,9 @@ export function createPipesServer(input: {
         },
       })
       .catch(() => {});
-    if (config.debug) {
+    // warn/error are surfaced regardless of config.debug — delivery failures
+    // must be visible without opting into full debug logging.
+    if (config.debug || level === "warn" || level === "error") {
       // eslint-disable-next-line no-console
       console.log(`[pipes:${level}] ${message}`);
     }
@@ -205,16 +207,18 @@ export const PipesServer: Plugin = async (
     }
   }
 
-  // Keep the server manager subscribed to pipes the current session belongs to,
-  // even when the join happened through the TUI manager's dialog (which cannot
-  // prompt the model itself). Called on session lifecycle events and, as a
-  // safety net, on a short unref'd timer so dialog-created joins are picked up
-  // within a few seconds. unref() ensures the timer never keeps the process up.
+  // Keep the server manager subscribed to pipes every session in this process
+  // belongs to, even when the join happened through the TUI manager's dialog
+  // (which cannot prompt the model itself). Iterates ALL observed sessions —
+  // not just the most recently active one — since a process can host several
+  // sessions and each needs its own subscription set up independently. Called
+  // on session lifecycle events and, as a safety net, on a short unref'd timer
+  // so dialog-created joins are picked up within a few seconds.
   let listeningTimer: ReturnType<typeof setInterval> | undefined;
   const syncListening = async () => {
-    const sid = await identity.currentSessionId();
-    if (!sid) return;
-    await manager.syncListening(sid);
+    for (const sid of identity.observedSessionIds()) {
+      await manager.syncListening(sid);
+    }
   };
   listeningTimer = setInterval(() => void syncListening(), 5000);
   listeningTimer.unref?.();

@@ -341,10 +341,33 @@ async function sendWrapper(
       replyTo: input.replyTo,
       taskId: input.taskId,
     });
-    return `Sent message ${msg.id} to ${input.to} in pipe ${participant.pipeId}.`;
+    return `${msg.id}: ${describeDelivery(deps.manager.deliveryOutcomes(msg.id))}`;
   } catch (e) {
     return `Failed to send: ${(e as Error).message}`;
   }
+}
+
+/** Turn per-recipient delivery outcomes into a status the calling agent can
+ *  actually trust, instead of a blanket "message sent" that only reflects
+ *  local persistence. */
+function describeDelivery(outcomes: ReturnType<PipeManager["deliveryOutcomes"]>): string {
+  if (!outcomes || outcomes.length === 0) {
+    return "persisted (broadcast/no other participants to notify locally).";
+  }
+  return outcomes
+    .map((o) => {
+      switch (o.status) {
+        case "delivered":
+          return `${o.name}: delivered.`;
+        case "queued":
+          return `${o.name}: NOT delivered yet (session busy or errored — ${o.error ?? "unknown error"}; will retry on idle).`;
+        case "failed":
+          return `${o.name}: delivery FAILED — ${o.error ?? "unknown error"}.`;
+        case "remote":
+          return `${o.name}: sent to shared log for their process to pick up (outcome not visible from here).`;
+      }
+    })
+    .join(" ");
 }
 
 async function taskCreateWrapper(
